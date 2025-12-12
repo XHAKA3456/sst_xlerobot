@@ -5,7 +5,7 @@ robot:
   port1: "/dev/ttyACM0"           # Left arm + head port
   port2: "/dev/ttyACM1"           # Right arm + base port
   use_degrees: true               # Use degrees for joint angles
-  use_head: true                  # Include head motors
+  use_head: false                  # Include head motors
 
 # Camera Configuration
 # Must match the cameras used during training!
@@ -17,6 +17,7 @@ cameras:
     height: 480
     fps: 30
     enabled: true
+    fourcc: "MJPG"
 
   left:
     type: "opencv"
@@ -25,6 +26,7 @@ cameras:
     height: 480
     fps: 30
     enabled: true
+    fourcc: "MJPG"
 
   right:
     type: "opencv"
@@ -33,6 +35,7 @@ cameras:
     height: 480
     fps: 30
     enabled: false                # Disable if not used during training
+    fourcc: "MJPG"
 
 # Inference Configuration
 inference:

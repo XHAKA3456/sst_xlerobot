@@ -129,6 +129,10 @@ VIDEO_PORT = 5656      # Quest로 비디오 스트리밍
 quest_monitor = QuestSocketMonitor(host="0.0.0.0", port=5454)  # Quest VR 데이터 수신
 ```
 
+카메라 설정에서 `quest_only: true`를 주면 해당 카메라는 Quest 스트리밍에만 사용되고,
+LeRobot 데이터셋에는 저장되지 않습니다(예: 헤드셋 전용 뷰). 또한 USB 대역폭을 안정적으로
+쓰기 위해 모든 카메라에 `fourcc: "MJPG"`를 지정해 MJPEG 포맷으로 강제하는 것을 권장합니다.
+
 ### Quest VR 앱 설정
 
 Quest VR 앱에서 다음 설정이 필요합니다:

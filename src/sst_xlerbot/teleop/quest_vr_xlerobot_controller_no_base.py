@@ -173,11 +173,17 @@ class QuestVideoStreamer:
         cap = cv2.VideoCapture(self.camera_index, cv2.CAP_V4L2)
         if not cap.isOpened():
             print("[Camera] V4L2 failed, fallback to default backend")
+            cap.release()
             cap = cv2.VideoCapture(self.camera_index)
         if not cap.isOpened():
             print(f"[Camera] Error: cannot open camera {self.camera_index}")
             self.stop_event.set()
             return
+
+        try:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        except cv2.error as exc:
+            print(f"[Camera] Failed to set MJPG fourcc: {exc}")
 
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.frame_width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
@@ -638,10 +644,11 @@ class QuestVRXLeRobotController:
         self.arm_state["left_arm_wrist_roll.pos"] = obs.get("left_arm_wrist_roll.pos", 0.0)
 
         # Head motor도 실제 로봇 위치로 동기화 및 초기 위치 저장
-        self.arm_state["head_motor_1.pos"] = obs.get("head_motor_1.pos", 0.0)
-        self.arm_state["head_motor_2.pos"] = obs.get("head_motor_2.pos", 0.0)
-        self.head_initial_pos["motor1"] = self.arm_state["head_motor_1.pos"]
-        self.head_initial_pos["motor2"] = self.arm_state["head_motor_2.pos"]
+        if self.use_head:
+            self.arm_state["head_motor_1.pos"] = obs.get("head_motor_1.pos", 0.0)
+            self.arm_state["head_motor_2.pos"] = obs.get("head_motor_2.pos", 0.0)
+            self.head_initial_pos["motor1"] = self.arm_state["head_motor_1.pos"]
+            self.head_initial_pos["motor2"] = self.arm_state["head_motor_2.pos"]
 
         print(f"  Right joints: pan={self.arm_state['right_arm_shoulder_pan.pos']:.1f}° "
               f"lift={self.arm_state['right_arm_shoulder_lift.pos']:.1f}° "

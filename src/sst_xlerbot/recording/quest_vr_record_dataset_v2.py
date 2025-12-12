@@ -54,26 +54,42 @@ def load_config(config_path: str) -> Dict[str, Any]:
     return config
 
 
+def poll_for_quit(timeout: float = 0.0) -> bool:
+    """Check stdin for 'q' + Enter without blocking."""
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+    except (OSError, ValueError):
+        return False
+
+    if not ready:
+        return False
+
+    user_input = sys.stdin.readline()
+    if not user_input:
+        return False
+
+    return user_input.strip().lower() == "q"
+
+
 def build_dataset_features(robot, camera_manager: "CameraManager", use_videos: bool = True) -> Dict[str, Dict]:
     """Construct LeRobot dataset feature spec from robot + external cameras."""
     # Remove base velocity commands since the omnidirectional base is not used.
-    filtered_action_hw = {
-        key: spec
-        for key, spec in robot.action_features.items()
-        if not key.endswith(".vel") and not key.startswith("base_")
-    }
+    def _should_keep(key: str) -> bool:
+        if key.endswith(".vel") or key.startswith("base_"):
+            return False
+        if not getattr(robot, "use_head", True) and "head_motor" in key:
+            return False
+        return True
 
-    filtered_obs_hw = {
-        key: spec
-        for key, spec in robot.observation_features.items()
-        if not key.endswith(".vel") and not key.startswith("base_")
-    }
+    filtered_action_hw = {key: spec for key, spec in robot.action_features.items() if _should_keep(key)}
+
+    filtered_obs_hw = {key: spec for key, spec in robot.observation_features.items() if _should_keep(key)}
 
     features = {}
     features.update(hw_to_dataset_features(filtered_action_hw, ACTION))
     features.update(hw_to_dataset_features(filtered_obs_hw, OBS_STR, use_videos))
 
-    for name in camera_manager.camera_names:
+    for name in camera_manager.dataset_camera_names:
         cam_cfg = camera_manager.camera_configs.get(name, {})
         height = cam_cfg.get('height', 480)
         width = cam_cfg.get('width', 640)
@@ -226,7 +242,9 @@ class CameraManager:
 
     def __init__(self, camera_configs: Dict[str, Dict]):
         self.cameras = {}
-        self.camera_names = []
+        self.camera_names = []  # 모든 카메라 (스트리밍용 포함)
+        self.dataset_camera_names = []  # 데이터셋에 저장할 카메라
+        self.quest_only_cameras = []
         self.camera_configs = {}
 
         for name, config in camera_configs.items():
@@ -234,18 +252,34 @@ class CameraManager:
                 continue
 
             if config['type'] == 'opencv':
-                cap = cv2.VideoCapture(config['index'])
+                cap = cv2.VideoCapture(config['index'], cv2.CAP_V4L2)
+                if not cap.isOpened():
+                    cap.release()
+                    cap = cv2.VideoCapture(config['index'])
+
+                if not cap.isOpened():
+                    print(f"⚠️  Failed to open camera '{name}' (index {config['index']})")
+                    continue
+
+                fourcc = config.get('fourcc', 'MJPG')
+                if fourcc:
+                    try:
+                        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
+                    except cv2.error as exc:
+                        print(f"⚠️  Failed to set FOURCC {fourcc} on '{name}': {exc}")
+
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, config['width'])
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config['height'])
                 cap.set(cv2.CAP_PROP_FPS, config['fps'])
 
-                if cap.isOpened():
-                    self.cameras[name] = cap
-                    self.camera_names.append(name)
-                    self.camera_configs[name] = config
-                    print(f"✅ Camera '{name}' opened (index {config['index']})")
+                self.cameras[name] = cap
+                self.camera_names.append(name)
+                self.camera_configs[name] = config
+                if config.get('quest_only', False):
+                    self.quest_only_cameras.append(name)
                 else:
-                    print(f"⚠️  Failed to open camera '{name}' (index {config['index']})")
+                    self.dataset_camera_names.append(name)
+                print(f"✅ Camera '{name}' opened (index {config['index']}), fourcc={fourcc}")
 
         print(f"\nTotal cameras active: {len(self.cameras)}")
 
@@ -394,13 +428,7 @@ def main():
             print(f"\n{'='*60}")
             print(f"Episode {ep_idx + 1}/{num_episodes}")
             print(f"{'='*60}")
-            print("Ready to start? Type 'r' + Enter to begin (or 'q' to abort).")
-            while True:
-                user_input = input().strip().lower()
-                if user_input == 'r':
-                    break
-                if user_input == 'q':
-                    raise KeyboardInterrupt
+            print("Automatically starting episode (press Ctrl+C anytime to abort).")
 
             episode_started = False
             frame_counter = 0
@@ -422,13 +450,15 @@ def main():
 
                     # Ensure all configured cameras produced a frame
                     missing_frames = [
-                        name for name in camera_manager.camera_names if name not in camera_frames
+                        name for name in camera_manager.dataset_camera_names if name not in camera_frames
                     ]
                     if missing_frames:
                         continue
 
                     observation_values = dict(observation)
                     for name, frame in camera_frames.items():
+                        if name not in camera_manager.dataset_camera_names:
+                            continue
                         observation_values[name] = frame
 
                     try:
@@ -477,11 +507,13 @@ def main():
 
             if ep_idx < num_episodes - 1:
                 reset_time = recording_config.get('reset_time', 5)
-                print(f"\nReset environment ({reset_time} seconds)...")
-                for remaining in range(reset_time, 0, -1):
-                    print(f"⏱️  Next episode in {remaining} s", end="\r")
-                    time.sleep(1)
-                print("\n\nMove the Quest controllers again to start the next episode (or 'q' + Enter to abort).")
+                if reset_time > 0:
+                    print(f"\nReset environment ({reset_time} seconds)... (press 'q' + Enter to stop)")
+                    for remaining in range(reset_time, 0, -1):
+                        print(f"⏱️  Next episode in {remaining} s", end="\r")
+                        if poll_for_quit(1.0):
+                            raise KeyboardInterrupt
+                    print("\n")
 
         print(f"\n🎉 Recorded {episodes_recorded} episodes successfully.")
 

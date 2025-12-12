@@ -34,6 +34,8 @@ cameras:
     height: 480
     fps: 30
     enabled: true                          # Enable/disable this camera
+    quest_only: true                       # true면 Quest 전송만, 데이터셋 저장 제외
+    fourcc: "MJPG"                         # USB 대역폭 절약용 포맷
 
   # Uncomment to add more cameras:
   left:
@@ -43,6 +45,7 @@ cameras:
     height: 480
     fps: 30
     enabled: true
+    fourcc: "MJPG"
 
   right:
     type: "opencv"
@@ -51,6 +54,7 @@ cameras:
     height: 480
     fps: 30
     enabled: false
+    fourcc: "MJPG"
 
 # Quest VR Configuration
 quest:

@@ -89,6 +89,7 @@ def setup_robot(config: dict) -> XLerobot:
             height=cam_cfg['height'],
             color_mode=ColorMode.RGB,
             rotation=Cv2Rotation.NO_ROTATION,
+            fourcc=cam_cfg.get('fourcc', 'MJPG'),
         )
 
     # Create robot config

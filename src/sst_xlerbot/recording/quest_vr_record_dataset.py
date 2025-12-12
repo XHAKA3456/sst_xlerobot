@@ -149,17 +149,29 @@ class CameraManager:
                 continue
 
             if config['type'] == 'opencv':
-                cap = cv2.VideoCapture(config['index'])
+                cap = cv2.VideoCapture(config['index'], cv2.CAP_V4L2)
+                if not cap.isOpened():
+                    cap.release()
+                    cap = cv2.VideoCapture(config['index'])
+
+                if not cap.isOpened():
+                    print(f"⚠️  Failed to open camera '{name}' (index {config['index']})")
+                    continue
+
+                fourcc = config.get('fourcc', 'MJPG')
+                if fourcc:
+                    try:
+                        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
+                    except cv2.error as exc:
+                        print(f"⚠️  Failed to set FOURCC {fourcc} on '{name}': {exc}")
+
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, config['width'])
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config['height'])
                 cap.set(cv2.CAP_PROP_FPS, config['fps'])
 
-                if cap.isOpened():
-                    self.cameras[name] = cap
-                    self.camera_names.append(name)
-                    print(f"✅ Camera '{name}' opened (index {config['index']})")
-                else:
-                    print(f"⚠️  Failed to open camera '{name}' (index {config['index']})")
+                self.cameras[name] = cap
+                self.camera_names.append(name)
+                print(f"✅ Camera '{name}' opened (index {config['index']}), fourcc={fourcc}")
             elif config['type'] == 'realsense':
                 print(f"⚠️  RealSense camera '{name}' not yet implemented")
                 # TODO: Implement RealSense support
