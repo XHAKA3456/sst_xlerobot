@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sst-xlerobot"
+version = "0.1.0"
+description = "Quest VR teleoperation and dataset recording utilities for XLerobot"
+requires-python = ">=3.8"
+authors = [{name = "SST", email = "info@example.com"}]
+dependencies = [
+    # NOTE: Install lerobot[feetech] first to get base dependencies:
+    # - numpy, opencv-python, pyyaml
+    # - torch, torchvision, datasets, huggingface-hub
+    # - feetech-servo-sdk, gymnasium, einops, etc.
+
+    # sst_xlerbot-specific dependencies (not in lerobot):
+    "rerun-sdk",  # Visualization for dataset recording
+]
+
+[project.scripts]
+sst-record = "sst_xlerbot.recording.quest_vr_record_dataset_v2:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

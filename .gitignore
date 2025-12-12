@@ -1,0 +1,8 @@
+build/
+dataset/
+log.txt
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.egg-info/

@@ -1,0 +1,63 @@
+# XLerobot Inference Configuration
+
+# Robot Configuration
+robot:
+  port1: "/dev/ttyACM0"           # Left arm + head port
+  port2: "/dev/ttyACM1"           # Right arm + base port
+  use_degrees: true               # Use degrees for joint angles
+  use_head: true                  # Include head motors
+
+# Camera Configuration
+# Must match the cameras used during training!
+cameras:
+  head_camera:
+    type: "opencv"
+    index: 2                      # Camera device index
+    width: 640
+    height: 480
+    fps: 30
+    enabled: true
+
+  left:
+    type: "opencv"
+    index: 4
+    width: 640
+    height: 480
+    fps: 30
+    enabled: true
+
+  right:
+    type: "opencv"
+    index: 6
+    width: 640
+    height: 480
+    fps: 30
+    enabled: false                # Disable if not used during training
+
+# Inference Configuration
+inference:
+  # Model path (relative to inference/ directory)
+  model_path: "./models/xlerobot_act_pickplace"
+
+  # Dataset ID (for loading normalization stats)
+  dataset_id: "xhaka3456/xlerobot_test"
+
+  # Task name (optional, for logging)
+  task_name: "Pick and place the red cube"
+
+  # Device: "cuda", "cpu", or "mps" (for Mac)
+  device: "cuda"
+
+  # Inference parameters
+  max_episodes: 1000              # Number of episodes to run
+  max_steps_per_episode: 500      # Max steps per episode
+  fps: 30                         # Control loop frequency (must match training)
+
+  # Debug settings
+  debug_log_interval: 10          # Log every N steps
+  debug_log_file: null            # Set to "logs/inference.jsonl" to enable debug logging
+
+# Safety (optional)
+safety:
+  enable_limits: true             # Enable safety position limits
+  max_relative_target: null       # Max relative movement per step (null = disabled)

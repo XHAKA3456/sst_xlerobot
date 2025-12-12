@@ -1,0 +1,19 @@
+# ============================================================================
+# SST XLerobot Requirements
+# ============================================================================
+#
+# Installation Order:
+#   1. pip install -e /path/to/lerobot[feetech]
+#   2. pip install -e .
+#
+# The lerobot[feetech] installation provides all base dependencies.
+# This file lists only sst_xlerbot-specific requirements.
+# ============================================================================
+
+# LeRobot base package (install this FIRST!)
+# Provides: numpy, opencv-python, pyyaml, torch, torchvision, datasets,
+#           huggingface-hub, feetech-servo-sdk, gymnasium, einops, etc.
+-e ../lerobot[feetech]
+
+# SST XLerobot specific dependencies (not in lerobot)
+rerun-sdk  # Visualization for dataset recording

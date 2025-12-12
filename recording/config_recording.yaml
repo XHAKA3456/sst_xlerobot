@@ -1,0 +1,66 @@
+# Quest VR Dataset Recording Configuration
+
+# Dataset Information
+dataset:
+  repo_id: "xhaka3456/xlerobot_test"  # Hugging Face dataset repository
+  task: "Pick and place the red cube"     # Task description
+  output_dir: "./dataset/xlerobot_test"        # Local output directory
+  resume: false                            # Continue from existing dataset (true/false)
+  push_to_hub: false                      # Upload to Hugging Face Hub after recording
+
+# Recording Settings
+recording:
+  num_episodes: 3                        # Number of episodes to record
+  episode_time: 1000                        # Maximum time per episode (seconds)
+  fps: 30
+  reset_time: 5                          # Time to reset environment between episodes (seconds)
+
+# Robot Configuration
+robot:
+  port1: "/dev/ttyACM0"                   # Left arm + head port
+  port2: "/dev/ttyACM1"                   # Right arm port
+  use_degrees: true                       # Use degrees for joint angles
+  use_head: true                          # Include head motors (set false when removed)
+
+# Camera Configuration
+cameras:
+  # Add as many cameras as you need
+  # Each camera needs: name, type, index, width, height, fps, enabled
+
+  head_camera:
+    type: "opencv"                        # Camera type: "opencv" or "realsense"
+    index: 2                              # Camera device index
+    width: 640
+    height: 480
+    fps: 30
+    enabled: true                          # Enable/disable this camera
+
+  # Uncomment to add more cameras:
+  left:
+    type: "opencv"
+    index: 4
+    width: 640
+    height: 480
+    fps: 30
+    enabled: true
+
+  right:
+    type: "opencv"
+    index: 6
+    width: 640
+    height: 480
+    fps: 30
+    enabled: false
+
+# Quest VR Configuration
+quest:
+  stream_camera: "head_camera"            # Which camera to stream to Quest (must match camera name above)
+  data_port: 5454                         # Quest VR data receiving port
+  video_port: 5656                        # Video streaming to Quest port
+  mirror_mode: false                 # Swap Quest left/right controllers to mirror robot arms
+
+# Visualization
+visualization:
+  display_cameras: true                   # Display camera feeds on PC screen (concatenated horizontally)
+  save_video: true                        # Save episode as video file
+  video_codec: "mp4v"                     # Video codec: "mp4v", "avc1", etc.
