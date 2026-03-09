@@ -2,18 +2,18 @@
 
 # Dataset Information
 dataset:
-  repo_id: "xhaka3456/xlerobot_test"  # Hugging Face dataset repository
-  task: "Pick and place the red cube"     # Task description
-  output_dir: "./dataset/xlerobot_test"        # Local output directory
+  repo_id: "xhaka3456/xlerobot_realtest"  # Hugging Face dataset repository
+  task: "Pick and place the doll on each places"     # Task description
+  output_dir: "./dataset"                 # Local output directory
   resume: false                            # Continue from existing dataset (true/false)
-  push_to_hub: false                      # Upload to Hugging Face Hub after recording
+  push_to_hub: true                      # Upload to Hugging Face Hub after recording
 
 # Recording Settings
 recording:
-  num_episodes: 3                        # Number of episodes to record
-  episode_time: 20                        # Maximum time per episode (seconds)
+  num_episodes: 20                        # Number of episodes to record
+  episode_time: 30                        # Maximum time per episode (seconds)
   fps: 30
-  reset_time: 10                          # Time to reset environment between episodes (seconds)
+  reset_time: 15                          # Time to reset environment between episodes (seconds)
 
 # Robot Configuration
 robot:
@@ -54,7 +54,7 @@ cameras:
 
   front:
     type: "opencv"
-    index: 6
+    index: 8
     width: 640
     height: 480
     fps: 30

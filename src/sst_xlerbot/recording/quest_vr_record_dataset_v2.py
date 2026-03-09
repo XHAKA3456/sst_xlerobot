@@ -54,6 +54,37 @@ def load_config(config_path: str) -> Dict[str, Any]:
     return config
 
 
+def add_quest_overlay(frame: np.ndarray, status: str, episode_num: int, remaining_time: float,
+                      left_special_pct: float = None, right_special_pct: float = None) -> np.ndarray:
+    """
+    Quest 카메라 프레임에 상태 오버레이 추가 (간단한 색상 점으로 표시)
+
+    Args:
+        frame: 원본 프레임
+        status: "RECORDING" 또는 "RESET"
+        episode_num: 에피소드 번호 (사용 안함)
+        remaining_time: 남은 시간 (사용 안함)
+        left_special_pct: 왼팔 특수 동작 진행률 (사용 안함)
+        right_special_pct: 오른팔 특수 동작 진행률 (사용 안함)
+    """
+    overlay = frame.copy()
+
+    # 왼쪽 위에 상태 표시 원
+    if status == "RECORDING":
+        color = (0, 0, 255)  # 빨강 (BGR)
+    else:  # RESET
+        color = (128, 128, 128)  # 회색 (BGR)
+
+    # 원을 이미지 위중앙으로 이동시키고 크기를 2배로 확대
+    circle_radius = 30
+    margin = 10  # 상단 여백
+    center_x = overlay.shape[1] // 2
+    center_y = circle_radius + margin
+    cv2.circle(overlay, (center_x, center_y), circle_radius, color, -1)
+
+    return overlay
+
+
 def poll_for_quit(timeout: float = 0.0) -> bool:
     """Check stdin for 'q' + Enter without blocking."""
     try:
@@ -424,6 +455,10 @@ def main():
         task_description = dataset_config['task']
         stream_camera_name = quest_config.get('stream_camera')
 
+        # 특수 동작 트리거를 위한 변수 (에피소드 간 유지)
+        prev_lift_value = 0.0     # 왼팔: lift
+        prev_agv_x_value = 0.0    # 오른팔: agv.x
+
         for ep_idx in range(num_episodes):
             print(f"\n{'='*60}")
             print(f"Episode {ep_idx + 1}/{num_episodes}")
@@ -438,6 +473,28 @@ def main():
             try:
                 while time.time() - start_time < episode_time:
                     loop_start = time.time()
+
+                    # ===== [추가] 특수 동작 트리거 감지 =====
+                    quest_data = controller.quest_monitor.get_dual_controllers()
+
+                    # 왼팔: lift > 0.5
+                    lift_data = quest_data.get("lift", {})
+                    lift_value = lift_data.get("value", 0.0) if lift_data.get("enabled", False) else 0.0
+                    if lift_value > 0.5 and prev_lift_value <= 0.5:
+                        controller.start_left_special_pose()
+                    prev_lift_value = lift_value
+
+                    # 오른팔: agv.x > 0.5
+                    agv_data = quest_data.get("agv", {})
+                    agv_x_value = agv_data.get("x", 0.0)
+                    if agv_x_value > 0.5 and prev_agv_x_value <= 0.5:
+                        controller.start_right_special_pose()
+                    prev_agv_x_value = agv_x_value
+
+                    # ===== [추가] 특수 포즈 업데이트 (양팔 독립적) =====
+                    controller.update_special_poses(period)
+
+                    # ===== [기존] Quest 데이터 처리 (특수 포즈 중이면 내부에서 무시됨) =====
                     controller.process_quest_data()
                     action = dict(controller.arm_state)
                     robot.send_action(action)
@@ -445,8 +502,29 @@ def main():
                     observation = robot.get_observation()
                     camera_frames = camera_manager.capture_all()
 
+                    # Quest 스트리밍 (오버레이 추가)
                     if quest_streamer and stream_camera_name in camera_frames:
-                        quest_streamer.send_frame(camera_frames[stream_camera_name])
+                        elapsed = time.time() - start_time
+                        remaining = max(0, episode_time - elapsed)
+
+                        # 특수 동작 진행률 계산
+                        left_pct = None
+                        right_pct = None
+                        if controller.left_is_executing_special_pose:
+                            left_pct = (controller.left_special_pose_elapsed / controller.left_special_pose_duration) * 100
+                        if controller.right_is_executing_special_pose:
+                            right_pct = (controller.right_special_pose_elapsed / controller.right_special_pose_duration) * 100
+
+                        # 오버레이 추가
+                        frame_with_overlay = add_quest_overlay(
+                            camera_frames[stream_camera_name],
+                            status="RECORDING",
+                            episode_num=ep_idx + 1,
+                            remaining_time=remaining,
+                            left_special_pct=left_pct,
+                            right_special_pct=right_pct
+                        )
+                        quest_streamer.send_frame(frame_with_overlay)
 
                     # Ensure all configured cameras produced a frame
                     missing_frames = [
@@ -496,6 +574,15 @@ def main():
             except KeyboardInterrupt:
                 print("\n⏹️  Episode interrupted by user.")
 
+            # ===== [추가] 특수 포즈 상태 출력 =====
+            if controller.left_is_executing_special_pose:
+                elapsed_pct = (controller.left_special_pose_elapsed / controller.left_special_pose_duration) * 100
+                print(f"  ℹ️  Left arm special pose paused at {elapsed_pct:.1f}% - will resume in next episode")
+
+            if controller.right_is_executing_special_pose:
+                elapsed_pct = (controller.right_special_pose_elapsed / controller.right_special_pose_duration) * 100
+                print(f"  ℹ️  Right arm special pose paused at {elapsed_pct:.1f}% - will resume in next episode")
+
             if episode_started and dataset.episode_buffer is not None and dataset.episode_buffer["size"] > 0:
                 dataset.save_episode()
                 episodes_recorded += 1
@@ -509,10 +596,33 @@ def main():
                 reset_time = recording_config.get('reset_time', 5)
                 if reset_time > 0:
                     print(f"\nReset environment ({reset_time} seconds)... (press 'q' + Enter to stop)")
-                    for remaining in range(reset_time, 0, -1):
-                        print(f"⏱️  Next episode in {remaining} s", end="\r")
-                        if poll_for_quit(1.0):
+                    reset_start = time.time()
+
+                    # 리셋 타임 동안에도 Quest 카메라 스트리밍 유지
+                    while time.time() - reset_start < reset_time:
+                        remaining = reset_time - (time.time() - reset_start)
+                        print(f"⏱️  Next episode in {remaining:.1f} s", end="\r")
+
+                        # Quest 카메라 스트리밍 (오버레이: RESET TIME)
+                        if quest_streamer and stream_camera_name:
+                            camera_frames = camera_manager.capture_all()
+                            if stream_camera_name in camera_frames:
+                                frame_with_overlay = add_quest_overlay(
+                                    camera_frames[stream_camera_name],
+                                    status="RESET",
+                                    episode_num=ep_idx + 2,  # 다음 에피소드 번호
+                                    remaining_time=remaining,
+                                    left_special_pct=None,
+                                    right_special_pct=None
+                                )
+                                quest_streamer.send_frame(frame_with_overlay)
+
+                        # 키보드 입력 체크
+                        if poll_for_quit(0.1):  # 100ms마다 체크 (카메라 스트리밍 위해)
                             raise KeyboardInterrupt
+
+                        time.sleep(0.1)  # 카메라 스트리밍 주기 (~10fps)
+
                     print("\n")
 
         print(f"\n🎉 Recorded {episodes_recorded} episodes successfully.")

@@ -356,6 +356,35 @@ class QuestVRXLeRobotController:
         self.is_initialized = False
         self.init_duration = 3.0
 
+        # ===== 특수 포즈 (독립적 양팔 제어) =====
+        # 왼팔: lift > 0.5 트리거
+        self.left_is_executing_special_pose = False
+        self.left_special_pose_elapsed = 0.0  # 누적 시간 (에피소드 넘어가도 유지)
+        self.left_special_pose_duration = 1.5  # 1.5초 동안 이동
+        self.left_special_pose_start_state = None
+        self.left_special_pose_target = {
+            "left_arm_shoulder_pan.pos": 0.0,
+            "left_arm_shoulder_lift.pos": 0.0,
+            "left_arm_elbow_flex.pos": 0.0,
+            "left_arm_wrist_flex.pos": 0.0,
+            "left_arm_wrist_roll.pos": 0.0,
+            "left_arm_gripper.pos": 33.3,  # 2/3 열림
+        }
+
+        # 오른팔: agv.x > 0.5 트리거
+        self.right_is_executing_special_pose = False
+        self.right_special_pose_elapsed = 0.0
+        self.right_special_pose_duration = 1.5
+        self.right_special_pose_start_state = None
+        self.right_special_pose_target = {
+            "right_arm_shoulder_pan.pos": 0.0,
+            "right_arm_shoulder_lift.pos": 0.0,
+            "right_arm_elbow_flex.pos": 0.0,
+            "right_arm_wrist_flex.pos": 0.0,
+            "right_arm_wrist_roll.pos": 0.0,
+            "right_arm_gripper.pos": 33.3,  # 2/3 열림
+        }
+
     # ========== IK 함수 (SO101Kinematics 사용) ==========
     # SO101Kinematics.inverse_kinematics() 사용
     # FK와 IK가 동일한 좌표 변환을 사용하여 일관성 보장
@@ -366,16 +395,18 @@ class QuestVRXLeRobotController:
         quest_data = self.quest_monitor.get_dual_controllers()
         current_time = time.time()
 
-        # Timeout handling
-        if self.last_left_seen_time and current_time - self.last_left_seen_time > self.controller_timeout:
-            self.prev_left_pos = None
-            self.prev_left_euler = {"x": None, "y": None, "z": None}
-            self.last_left_seen_time = None
+        # Timeout handling (각 arm 독립적)
+        if not self.left_is_executing_special_pose:
+            if self.last_left_seen_time and current_time - self.last_left_seen_time > self.controller_timeout:
+                self.prev_left_pos = None
+                self.prev_left_euler = {"x": None, "y": None, "z": None}
+                self.last_left_seen_time = None
 
-        if self.last_right_seen_time and current_time - self.last_right_seen_time > self.controller_timeout:
-            self.prev_right_pos = None
-            self.prev_right_euler = {"x": None, "y": None, "z": None}
-            self.last_right_seen_time = None
+        if not self.right_is_executing_special_pose:
+            if self.last_right_seen_time and current_time - self.last_right_seen_time > self.controller_timeout:
+                self.prev_right_pos = None
+                self.prev_right_euler = {"x": None, "y": None, "z": None}
+                self.last_right_seen_time = None
 
         if self.mirror_mode:
             left_data = quest_data.get("right")
@@ -384,8 +415,14 @@ class QuestVRXLeRobotController:
             left_data = quest_data.get("left")
             right_data = quest_data.get("right")
 
-        self._process_left_arm(left_data, current_time)
-        self._process_right_arm(right_data, current_time)
+        # 각 arm별로 특수 포즈 실행 중이면 건너뛰기
+        if not self.left_is_executing_special_pose:
+            self._process_left_arm(left_data, current_time)
+
+        if not self.right_is_executing_special_pose:
+            self._process_right_arm(right_data, current_time)
+
+        # Head는 항상 처리
         if self.use_head:
             self._process_head(quest_data.get("head"))
 
@@ -622,14 +659,26 @@ class QuestVRXLeRobotController:
 
     # ========== 초기화 & 캘리브레이션 ==========
     def _sync_ee_with_robot(self):
-        """arm_state를 실제 로봇 위치와 동기화 (FK 없이, 공식 방식)"""
+        """arm_state를 실제 로봇 위치와 동기화 (FK 사용)"""
         obs = self.robot.get_observation()
 
-        # EE 위치는 하드코딩된 값 사용 (공식 XLerobot VR 코드 방식)
-        # FK 계산 없이 초기 자세가 [0.1629, 0.1131]과 정확히 맞다고 가정
-        print(f"\n[Sync] 하드코딩된 EE 위치 사용:")
-        print(f"  Left:  EE=({self.left_ee_pos[0]:.4f}, {self.left_ee_pos[1]:.4f})")
-        print(f"  Right: EE=({self.right_ee_pos[0]:.4f}, {self.right_ee_pos[1]:.4f})")
+        # FK로 실제 EE 위치 계산
+        left_x, left_y = self.kinematics.forward_kinematics(
+            obs.get("left_arm_shoulder_lift.pos", 0.0),
+            obs.get("left_arm_elbow_flex.pos", 0.0)
+        )
+        right_x, right_y = self.kinematics.forward_kinematics(
+            obs.get("right_arm_shoulder_lift.pos", 0.0),
+            obs.get("right_arm_elbow_flex.pos", 0.0)
+        )
+
+        # EE 위치 업데이트
+        self.left_ee_pos = np.array([left_x, left_y])
+        self.right_ee_pos = np.array([right_x, right_y])
+
+        print(f"\n[Sync] FK로 계산된 EE 위치:")
+        print(f"  Left:  EE=({left_x:.4f}, {left_y:.4f})")
+        print(f"  Right: EE=({right_x:.4f}, {right_y:.4f})")
 
         # arm_state를 실제 로봇 위치로 동기화
         self.arm_state["right_arm_shoulder_pan.pos"] = obs.get("right_arm_shoulder_pan.pos", 0.0)
@@ -642,6 +691,10 @@ class QuestVRXLeRobotController:
         self.arm_state["left_arm_elbow_flex.pos"] = obs.get("left_arm_elbow_flex.pos", 0.0)
         self.arm_state["left_arm_wrist_flex.pos"] = obs.get("left_arm_wrist_flex.pos", 0.0)
         self.arm_state["left_arm_wrist_roll.pos"] = obs.get("left_arm_wrist_roll.pos", 0.0)
+
+        # Gripper 위치를 33.3도(2/3 open)로 동기화
+        self.arm_state["right_arm_gripper.pos"] = obs.get("right_arm_gripper.pos", 33.3)
+        self.arm_state["left_arm_gripper.pos"] = obs.get("left_arm_gripper.pos", 33.3)
 
         # Head motor도 실제 로봇 위치로 동기화 및 초기 위치 저장
         if self.use_head:
@@ -675,10 +728,16 @@ class QuestVRXLeRobotController:
         print("[Step 1] Current pose:")
         print(f"  Right: pan={current_state['right_arm_shoulder_pan.pos']:.1f}° "
               f"lift={current_state['right_arm_shoulder_lift.pos']:.1f}° "
-              f"elbow={current_state['right_arm_elbow_flex.pos']:.1f}°")
+              f"elbow={current_state['right_arm_elbow_flex.pos']:.1f}°"
+              f"wrist_flex={current_state['right_arm_wrist_flex.pos']:.1f}°"
+              f"wrist_roll={current_state['right_arm_wrist_roll.pos']:.1f}°"
+              f"gripper={current_state['right_arm_gripper.pos']:.1f}°")
         print(f"  Left:  pan={current_state['left_arm_shoulder_pan.pos']:.1f}° "
               f"lift={current_state['left_arm_shoulder_lift.pos']:.1f}° "
-              f"elbow={current_state['left_arm_elbow_flex.pos']:.1f}°\n")
+              f"elbow={current_state['left_arm_elbow_flex.pos']:.1f}°"
+              f"wrist_flex={current_state['left_arm_wrist_flex.pos']:.1f}° "
+              f"wrist_roll={current_state['left_arm_wrist_roll.pos']:.1f}° "
+              f"gripper={current_state['left_arm_gripper.pos']:.1f}° \n")
 
         # [2] 목표 위치 (초기 자세) - 공식 XLerobot VR 코드와 동일 (zero position)
         head_target1 = 0.0 if not self.is_initialized else current_state.get("head_motor_1.pos", 0.0)
@@ -921,16 +980,139 @@ class QuestVRXLeRobotController:
 
                 self.robot.send_action(action)
 
-                if frame_count % 50 == 0:
+                if frame_count % 10 == 0:
                     left_ok = "✓" if self.prev_left_pos is not None else "✗"
                     right_ok = "✓" if self.prev_right_pos is not None else "✗"
-                    print(f"Frame {frame_count}: L{left_ok} R{right_ok}", end="\r")
+                    print(
+                        f"Frame {frame_count}: L{left_ok} R{right_ok} "
+                        f"Left EE=({self.left_ee_pos[0]:.4f}, {self.left_ee_pos[1]:.4f}) "
+                        f"Right EE=({self.right_ee_pos[0]:.4f}, {self.right_ee_pos[1]:.4f})",
+                        end="\r",
+                    )
 
                 frame_count += 1
                 dt = time.time() - start
                 time.sleep(max(0.0, period - dt))
         except KeyboardInterrupt:
             print("\n\nStopping...")
+
+    # ========== 특수 포즈 (독립적 양팔 제어) ==========
+    def start_left_special_pose(self):
+        """왼팔 특수 포즈 시작 (lift > 0.5)"""
+        if self.left_is_executing_special_pose:
+            return  # 이미 실행 중이면 무시
+
+        print("\n🎯 Left arm special pose triggered!")
+        self.left_is_executing_special_pose = True
+        self.left_special_pose_elapsed = 0.0
+
+        # 현재 왼팔 상태 저장
+        self.left_special_pose_start_state = {
+            key: self.arm_state[key]
+            for key in self.left_special_pose_target.keys()
+        }
+
+        print(f"  Moving left arm to special pose over {self.left_special_pose_duration}s...")
+
+    def start_right_special_pose(self):
+        """오른팔 특수 포즈 시작 (agv.x > 0.5)"""
+        if self.right_is_executing_special_pose:
+            return  # 이미 실행 중이면 무시
+
+        print("\n🎯 Right arm special pose triggered!")
+        self.right_is_executing_special_pose = True
+        self.right_special_pose_elapsed = 0.0
+
+        # 현재 오른팔 상태 저장
+        self.right_special_pose_start_state = {
+            key: self.arm_state[key]
+            for key in self.right_special_pose_target.keys()
+        }
+
+        print(f"  Moving right arm to special pose over {self.right_special_pose_duration}s...")
+
+    def update_special_poses(self, dt):
+        """
+        양팔 특수 포즈 진행 (매 프레임 호출)
+
+        Args:
+            dt: 이번 프레임의 시간 간격 (period)
+        """
+        # 왼팔 업데이트
+        if self.left_is_executing_special_pose:
+            self.left_special_pose_elapsed += dt
+            t = min(self.left_special_pose_elapsed / self.left_special_pose_duration, 1.0)
+
+            # Linear interpolation
+            for key in self.left_special_pose_target.keys():
+                start_val = self.left_special_pose_start_state[key]
+                target_val = self.left_special_pose_target[key]
+                self.arm_state[key] = start_val * (1 - t) + target_val * t
+
+            # 완료 체크
+            if t >= 1.0:
+                print("  ✓ Left arm special pose completed!")
+                self._finalize_left_special_pose()
+
+        # 오른팔 업데이트
+        if self.right_is_executing_special_pose:
+            self.right_special_pose_elapsed += dt
+            t = min(self.right_special_pose_elapsed / self.right_special_pose_duration, 1.0)
+
+            # Linear interpolation
+            for key in self.right_special_pose_target.keys():
+                start_val = self.right_special_pose_start_state[key]
+                target_val = self.right_special_pose_target[key]
+                self.arm_state[key] = start_val * (1 - t) + target_val * t
+
+            # 완료 체크
+            if t >= 1.0:
+                print("  ✓ Right arm special pose completed!")
+                self._finalize_right_special_pose()
+
+    def _finalize_left_special_pose(self):
+        """왼팔 특수 포즈 완료 후 처리"""
+        # 1. FK로 왼팔 EE 위치 업데이트
+        obs = self.robot.get_observation()
+        left_x, left_y = self.kinematics.forward_kinematics(
+            obs.get("left_arm_shoulder_lift.pos", 0.0),
+            obs.get("left_arm_elbow_flex.pos", 0.0)
+        )
+
+        self.left_ee_pos = np.array([left_x, left_y])
+        print(f"  ✓ Left EE updated: ({left_x:.4f}, {left_y:.4f})")
+
+        # 2. 왼쪽 Delta 초기화
+        self.prev_left_pos = None
+        self.prev_left_euler = {"x": None, "y": None, "z": None}
+        self.last_left_seen_time = None
+
+        print("  ✓ Left delta reset - next left controller input will auto-calibrate")
+
+        # 3. 플래그 리셋
+        self.left_is_executing_special_pose = False
+
+    def _finalize_right_special_pose(self):
+        """오른팔 특수 포즈 완료 후 처리"""
+        # 1. FK로 오른팔 EE 위치 업데이트
+        obs = self.robot.get_observation()
+        right_x, right_y = self.kinematics.forward_kinematics(
+            obs.get("right_arm_shoulder_lift.pos", 0.0),
+            obs.get("right_arm_elbow_flex.pos", 0.0)
+        )
+
+        self.right_ee_pos = np.array([right_x, right_y])
+        print(f"  ✓ Right EE updated: ({right_x:.4f}, {right_y:.4f})")
+
+        # 2. 오른쪽 Delta 초기화
+        self.prev_right_pos = None
+        self.prev_right_euler = {"x": None, "y": None, "z": None}
+        self.last_right_seen_time = None
+
+        print("  ✓ Right delta reset - next right controller input will auto-calibrate")
+
+        # 3. 플래그 리셋
+        self.right_is_executing_special_pose = False
 
 
 def main():
