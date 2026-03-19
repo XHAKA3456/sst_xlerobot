@@ -27,20 +27,23 @@ import rerun as rr
 from sst_xlerbot.quest.quest_socket_monitor import QuestSocketMonitor
 from sst_xlerbot.teleop.quest_vr_xlerobot_controller_no_base import (
     XLerobotArmOnly,
-    QuestVRXLeRobotController,
+    QuestVRXLeRobotController as QuestVRXLeRobotControllerNoBase,
+)
+from sst_xlerbot.teleop.quest_vr_xlerobot_controller import (
+    QuestVRXLeRobotController as QuestVRXLeRobotControllerBase,
 )
 
 try:
-    from lerobot.robots.xlerobot import XLerobotConfig
+    from lerobot.robots.xlerobot import XLerobotConfig, XLerobot
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import hw_to_dataset_features, build_dataset_frame
     from lerobot.utils.constants import ACTION, OBS_STR
     from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
 except ModuleNotFoundError:
-    REPO_ROOT = Path(__file__).resolve().parents[4]
+    REPO_ROOT = Path(__file__).resolve().parents[3]
     LEROBOT_SRC = REPO_ROOT / "lerobot" / "src"
     sys.path.insert(0, str(LEROBOT_SRC))
-    from lerobot.robots.xlerobot import XLerobotConfig
+    from lerobot.robots.xlerobot import XLerobotConfig, XLerobot
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import hw_to_dataset_features, build_dataset_frame
     from lerobot.utils.constants import ACTION, OBS_STR
@@ -102,11 +105,11 @@ def poll_for_quit(timeout: float = 0.0) -> bool:
     return user_input.strip().lower() == "q"
 
 
-def build_dataset_features(robot, camera_manager: "CameraManager", use_videos: bool = True) -> Dict[str, Dict]:
+def build_dataset_features(robot, camera_manager: "CameraManager", use_videos: bool = True, use_base: bool = False) -> Dict[str, Dict]:
     """Construct LeRobot dataset feature spec from robot + external cameras."""
-    # Remove base velocity commands since the omnidirectional base is not used.
     def _should_keep(key: str) -> bool:
-        if key.endswith(".vel") or key.startswith("base_"):
+        # Remove base velocity commands when not using base
+        if not use_base and (key.endswith(".vel") or key.startswith("base_")):
             return False
         if not getattr(robot, "use_head", True) and "head_motor" in key:
             return False
@@ -138,11 +141,12 @@ def prepare_dataset(
     recording_cfg: Dict[str, Any],
     robot,
     camera_manager: CameraManager,
+    use_base: bool = False,
 ) -> tuple[LeRobotDataset, Path]:
     """Create or resume a LeRobot dataset according to config."""
     repo_id = dataset_cfg['repo_id']
     fps = recording_cfg['fps']
-    default_root = Path(__file__).resolve().parents[4] / "dataset"
+    default_root = Path(__file__).resolve().parents[3] / "dataset"
     local_root_base = (
         Path(dataset_cfg['output_dir']).expanduser()
         if dataset_cfg.get('output_dir')
@@ -163,7 +167,7 @@ def prepare_dataset(
             raise FileExistsError(
                 f"Dataset directory {local_root} already exists. Delete it or set dataset.resume=true."
             )
-        feature_spec = build_dataset_features(robot, camera_manager, use_videos=True)
+        feature_spec = build_dataset_features(robot, camera_manager, use_videos=True, use_base=use_base)
         dataset = LeRobotDataset.create(
             repo_id=repo_id,
             fps=fps,
@@ -387,13 +391,17 @@ def main():
     # 로봇 연결
     robot_config_dict = config['robot']
     use_head = robot_config_dict.get('use_head', True)
+    use_base = robot_config_dict.get('use_base', False)
 
     robot_config = XLerobotConfig(
         use_degrees=robot_config_dict.get('use_degrees', True),
         port1=robot_config_dict['port1'],
         port2=robot_config_dict['port2'],
     )
-    robot = XLerobotArmOnly(robot_config, use_head=use_head)
+    if use_base:
+        robot = XLerobot(robot_config)
+    else:
+        robot = XLerobotArmOnly(robot_config, use_head=use_head)
     robot.connect()
 
     # Quest 연결 대기
@@ -406,19 +414,25 @@ def main():
         return
 
     # Quest VR 컨트롤러 초기화
-    controller = QuestVRXLeRobotController(
-        quest_monitor,
-        robot,
-        mirror_mode=quest_config.get('mirror_mode', False),
-        use_head=use_head,
-    )
+    if use_base:
+        controller = QuestVRXLeRobotControllerBase(
+            quest_monitor,
+            robot,
+        )
+    else:
+        controller = QuestVRXLeRobotControllerNoBase(
+            quest_monitor,
+            robot,
+            mirror_mode=quest_config.get('mirror_mode', False),
+            use_head=use_head,
+        )
 
     # LeRobot Dataset 준비
     dataset = None
     dataset_root = None
     push_to_hub_flag = dataset_config.get('push_to_hub', False)
     try:
-        dataset, dataset_root = prepare_dataset(dataset_config, recording_config, robot, camera_manager)
+        dataset, dataset_root = prepare_dataset(dataset_config, recording_config, robot, camera_manager, use_base=use_base)
     except FileExistsError as exc:
         print(f"❌ {exc}")
         quest_monitor.stop()
@@ -496,7 +510,10 @@ def main():
 
                     # ===== [기존] Quest 데이터 처리 (특수 포즈 중이면 내부에서 무시됨) =====
                     controller.process_quest_data()
-                    action = dict(controller.arm_state)
+                    if use_base and hasattr(controller, 'base_vel'):
+                        action = {**dict(controller.arm_state), **dict(controller.base_vel)}
+                    else:
+                        action = dict(controller.arm_state)
                     robot.send_action(action)
 
                     observation = robot.get_observation()

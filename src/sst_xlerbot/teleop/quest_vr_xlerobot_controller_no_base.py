@@ -27,7 +27,7 @@ try:
     from lerobot.motors.feetech import FeetechMotorsBus
     from lerobot.utils.errors import DeviceNotConnectedError
 except ModuleNotFoundError:
-    PROJECT_ROOT = Path(__file__).resolve().parents[4]
+    PROJECT_ROOT = Path(__file__).resolve().parents[3]
     LEROBOT_SRC = PROJECT_ROOT / "lerobot" / "src"
     if LEROBOT_SRC.exists():
         sys.path.insert(0, str(LEROBOT_SRC))

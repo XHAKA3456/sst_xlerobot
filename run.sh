@@ -32,5 +32,13 @@ fi
 echo "✅ Environment ready"
 echo ""
 
-# Run the packaged teleop controller
-python -m sst_xlerbot.teleop.quest_vr_xlerobot_controller_no_base "$@"
+# Run the teleop controller
+# Usage: ./run.sh           → no_base (arms + head only)
+#        ./run.sh --base    → full (arms + head + wheels)
+
+if [[ "$1" == "--base" ]]; then
+    shift
+    python -m sst_xlerbot.teleop.quest_vr_xlerobot_controller "$@"
+else
+    python -m sst_xlerbot.teleop.quest_vr_xlerobot_controller_no_base "$@"
+fi

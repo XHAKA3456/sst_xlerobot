@@ -32,7 +32,7 @@ try:
     from lerobot.utils.constants import ACTION, OBS_STR
     from lerobot.utils.control_utils import predict_action
 except ModuleNotFoundError:
-    PROJECT_ROOT = Path(__file__).resolve().parents[4]
+    PROJECT_ROOT = Path(__file__).resolve().parents[3]
     LEROBOT_SRC = PROJECT_ROOT / "lerobot" / "src"
     sys.path.insert(0, str(LEROBOT_SRC))
     from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
@@ -101,7 +101,14 @@ def setup_robot(config: dict) -> XLerobot:
     )
 
     use_head = config['robot'].get('use_head', True)
-    robot = XLerobotArmOnly(robot_cfg, use_head=use_head)
+    use_base = config['robot'].get('use_base', False)
+
+    if use_base:
+        logger.info("Mode: full robot (arms + head + base)")
+        robot = XLerobot(robot_cfg)
+    else:
+        logger.info("Mode: arms only (no base)")
+        robot = XLerobotArmOnly(robot_cfg, use_head=use_head)
 
     logger.info("Connecting to robot...")
     robot.connect()

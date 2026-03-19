@@ -20,6 +20,8 @@ dependencies = [
 
 [project.scripts]
 sst-record = "sst_xlerbot.recording.quest_vr_record_dataset_v2:main"
+sst-teleop = "sst_xlerbot.teleop.quest_vr_xlerobot_controller_no_base:main"
+sst-teleop-base = "sst_xlerbot.teleop.quest_vr_xlerobot_controller:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

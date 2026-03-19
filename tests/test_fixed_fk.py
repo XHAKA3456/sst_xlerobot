@@ -1,4 +1,4 @@
-from src.sst_xlerbot.model.so101robot_fix import SO101Kinematics
+from sst_xlerbot.model.so101robot_fix import SO101Kinematics
 import math
 
 kin = SO101Kinematics()

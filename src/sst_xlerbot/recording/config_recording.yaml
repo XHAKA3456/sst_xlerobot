@@ -21,6 +21,7 @@ robot:
   port2: "/dev/ttyACM1"                   # Right arm port
   use_degrees: true                       # Use degrees for joint angles
   use_head: false                          # Include head motors (set false when removed)
+  use_base: false                          # Include omnidirectional wheel base (set true for full robot)
 
 # Camera Configuration
 cameras:

@@ -17,20 +17,18 @@ from typing import Optional
 import cv2
 import numpy as np
 
-EXAMPLES_DIR = os.path.dirname(os.path.abspath(__file__))
-if EXAMPLES_DIR not in sys.path:
-    sys.path.insert(0, EXAMPLES_DIR)
-SOFTWARE_SRC = os.path.join(os.path.abspath(os.path.join(EXAMPLES_DIR, "..")), "src")
-if SOFTWARE_SRC not in sys.path and os.path.isdir(SOFTWARE_SRC):
-    sys.path.insert(0, SOFTWARE_SRC)
-PROJECT_ROOT = os.path.abspath(os.path.join(EXAMPLES_DIR, "..", "..", ".."))
-LEROBOT_SRC = os.path.join(PROJECT_ROOT, "lerobot", "src")
-if LEROBOT_SRC not in sys.path and os.path.isdir(LEROBOT_SRC):
-    sys.path.insert(0, LEROBOT_SRC)
+from pathlib import Path
 
-from quest_socket_monitor import QuestSocketMonitor
-from lerobot.robots.xlerobot import XLerobotConfig, XLerobot
-from model.SO101Robot import SO101Kinematics
+from sst_xlerbot.quest.quest_socket_monitor import QuestSocketMonitor
+from sst_xlerbot.model.SO101Robot import SO101Kinematics
+
+try:
+    from lerobot.robots.xlerobot import XLerobotConfig, XLerobot
+except ModuleNotFoundError:
+    LEROBOT_SRC = Path(__file__).resolve().parents[3] / "lerobot" / "src"
+    if LEROBOT_SRC.exists():
+        sys.path.insert(0, str(LEROBOT_SRC))
+    from lerobot.robots.xlerobot import XLerobotConfig, XLerobot
 
 
 VIDEO_SERVER_IP = "0.0.0.0"
@@ -265,6 +263,26 @@ class QuestVRXLeRobotController:
         # ===== 초기화 =====
         self.is_initialized = False
         self.init_duration = 3.0
+
+        # ===== 특수 동작 (special pose) 인터페이스 — no_base 컨트롤러와 동일한 API =====
+        self.left_is_executing_special_pose = False
+        self.right_is_executing_special_pose = False
+        self.left_special_pose_elapsed = 0.0
+        self.left_special_pose_duration = 1.0
+        self.right_special_pose_elapsed = 0.0
+        self.right_special_pose_duration = 1.0
+
+    def start_left_special_pose(self):
+        """특수 동작 미지원 (base 버전에서는 no-op)"""
+        pass
+
+    def start_right_special_pose(self):
+        """특수 동작 미지원 (base 버전에서는 no-op)"""
+        pass
+
+    def update_special_poses(self, dt: float):
+        """특수 동작 미지원 (base 버전에서는 no-op)"""
+        pass
 
     # ========== IK 함수 (SO101Kinematics 사용) ==========
     # SO101Kinematics.inverse_kinematics() 사용
