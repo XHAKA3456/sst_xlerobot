@@ -276,6 +276,9 @@ Download from Hugging Face Hub or use a model trained with `lerobot-train`.
 
 ## 🔧 Configuration Summary
 
+> **⚠️ Camera indices, USB ports, and serial ports vary by machine.**
+> Run `ls /dev/video*` and `ls /dev/ttyACM*` to check what's actually assigned on your system, then update the files below accordingly.
+
 | File | What to Edit |
 |------|-------------|
 | `recording/config_recording.yaml` | Camera indices, ports, `use_head`, `use_base`, HF repo ID |

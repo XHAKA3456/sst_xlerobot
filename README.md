@@ -274,6 +274,9 @@ Hugging Face Hub에서 다운로드하거나 `lerobot-train`으로 학습한 모
 
 ## 🔧 설정 요약
 
+> **⚠️ 카메라 인덱스, USB 포트, 시리얼 포트는 PC 환경마다 다릅니다.**
+> `ls /dev/video*` 와 `ls /dev/ttyACM*` 으로 실제 할당된 장치를 먼저 확인한 후, 아래 파일들을 본인 환경에 맞게 수정하세요.
+
 | 파일 | 수정 항목 |
 |------|---------|
 | `recording/config_recording.yaml` | 카메라 인덱스, 포트, `use_head`, `use_base`, HF repo ID |
